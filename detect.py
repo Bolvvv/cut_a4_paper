@@ -5,6 +5,7 @@ import cv2
 import torch
 import torch.backends.cudnn as cudnn
 from numpy import random
+import math
 
 from models.experimental import attempt_load
 from utils.datasets import LoadStreams, LoadImages
@@ -14,9 +15,67 @@ from utils.plots import plot_one_box
 from utils.torch_utils import select_device, load_classifier, time_synchronized
 from detect_config import Config
 
+config =Config#生成参数对象
 
-def detect(save_img=False):
-    config =Config#生成参数对象
+def trans_yolo_to_normal(width, height, xywh):
+    """
+    将yolo格式的方框转换为像素值
+    """
+    x, y, w, h = xywh[0], xywh[1], xywh[2], xywh[3]
+    x_l = (2*width*x - w*width)/2
+    x_r = (2*width*x + w*width)/2
+    y_l = (2*height*y - h*height)/2
+    y_r = (2*height*y + h*height)/2
+    return [x_l, y_l, x_r, y_r]
+
+def cut_img(p_name, det_info_list, width, height):
+    #判断是否符合长度(应该为7个框，6个图片，1个二维码)
+    if len(det_info_list) != 7:
+        log_result(p_name+'未完整框选出所有图片，总框选数量为'+str(len(det_info_list)))
+    sorted_list = sort_img(det_info_list)
+    for i in sorted_list:
+        i[1] = trans_yolo_to_normal(width, height, i[1])
+    print(sorted_list)
+
+def sort_img(l):
+    img_list = []
+    src_len = len(l)
+    for i in range(len(l)):
+        if l[i][0] == 1:
+            img_list.append(l[i])
+            l.pop(i)
+            break
+    l, img_list, aim_index = sort_step(l, img_list, 0, src_len)
+    img_list = img_list[::-1]
+    return img_list   
+ 
+def sort_step(l, img_list, aim_index, src_len):
+    if aim_index == src_len -1:
+        return l, img_list, aim_index
+    min_len = [2, -1]#最近距离和编号
+    min_2_len = [2, -1]#次近距离和编号
+    for m in range(len(l)):
+        if l[m] != None:
+            length_to_aim = math.pow(l[m][1][0] - img_list[aim_index][1][0], 2) + math.pow(l[m][1][1] - img_list[aim_index][1][1], 2)
+            if length_to_aim < min_len[0]:
+                min_2_len = min_len.copy()#进行浅拷贝
+                min_len = [length_to_aim, m]
+            elif length_to_aim < min_2_len[0]:
+                min_2_len = [length_to_aim, m]
+            else:
+                continue
+    img_list.append(l[min_2_len[1]])
+    img_list.append(l[min_len[1]])
+    l[min_2_len[1]] = None
+    l[min_len[1]] = None
+    aim_index = len(img_list)-1
+    return sort_step(l, img_list, aim_index, src_len)
+
+def log_result(str_log):
+    with open(config.result_log, 'a') as f:
+        f.writelines(str_log+'\n')
+
+def detect():
     source, weights, save_txt, imgsz, save_img = config.source, config.weights, config.save_txt, config.img_size, config.save_img
 
     # Directories
@@ -63,33 +122,34 @@ def detect(save_img=False):
 
         # Process detections
         for i, det in enumerate(pred):  # detections per image
-            p, s, im0, frame = Path(path), '', im0s, getattr(dataset, 'frame', 0)
-
+            p, s, im0, frame = Path(path), '', im0s, getattr(dataset, 'frame', 0)#im0是原图[长，宽，通道]
             save_path = str(save_dir / p.name)
             txt_path = str(save_dir / 'labels' / p.stem) + ('' if dataset.mode == 'image' else f'_{frame}')
             s += '%gx%g ' % img.shape[2:]  # print string
             gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]  # normalization gain whwh
             if len(det):
+                #存储经转换后的标记框信息
+                det_info_list = []
                 # Rescale boxes from img_size to im0 size
                 det[:, :4] = scale_coords(img.shape[2:], det[:, :4], im0.shape).round()
-
                 # Print results
                 for c in det[:, -1].unique():
                     n = (det[:, -1] == c).sum()  # detections per class
                     s += f'{n} {names[int(c)]}s, '  # add to string
-
                 # Write results
                 for *xyxy, conf, cls in reversed(det):
-                    if save_txt:  # Write to file
-                        xywh = (xyxy2xywh(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
-                        line = (cls, *xywh, conf) if config.save_conf else (cls, *xywh)  # label format
-                        with open(txt_path + '.txt', 'a') as f:
-                            f.write(('%g ' * len(line)).rstrip() % line + '\n')
-
+                    xywh = (xyxy2xywh(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
+                    line = [int(cls), xywh, float(conf.cpu())] if config.save_conf else [int(cls), xywh]  # label format
+                    det_info_list.append(line)
                     if save_img:  # Add bbox to image
                         label = f'{names[int(cls)]} {conf:.2f}'
                         plot_one_box(xyxy, im0, label=label, color=colors[int(cls)], line_thickness=3)
-
+                #处理图片信息
+                cut_img(p.name, det_info_list, im0.shape[1], im0.shape[0])
+            else:
+                #此时表明没有框选出图片，需要进行记录：
+                with open('result.txt', 'a') as f:
+                    f.writelines(p.name + '不存在框选目标')
             # Print time (inference + NMS)
             print(f'{s}Done. ({t2 - t1:.3f}s)')
 
