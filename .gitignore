@@ -127,3 +127,10 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+src_labels/*
+tgt_labels/*
+!README.md
+datasets
+img
+runs
+weights

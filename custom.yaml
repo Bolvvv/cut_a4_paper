@@ -1,0 +1,12 @@
+# train and val datasets (image directory or *.txt file with image paths)
+train: ./datasets/score/images/train/
+val: ./datasets/score/images/val/
+
+# number of classes
+nc: 2
+
+# class names
+names: ['img', 'qr']
+
+#python train.py --img-size 1280 --batch-size 4 --epochs 300 --data ./datasets/custom.yaml --cfg ./models/yolov5s.yaml --weights ./weights/yolov5s.pt
+#python detect.py --weights ./weights/best.pt --source ./datasets/score/images/test --img-size 1280
