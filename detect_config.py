@@ -1,6 +1,7 @@
 class Config(object):
     weights = './weights/best.pt'#训练好的模型参数
     source = './img'#需要预测的图片存储地点
+    save_cut_img_path = './save_cut_img'
     img_size = 1280#图片尺寸
     save_img = True#是否要存储预测的图片
     conf_thres = 0.25#置信度低于0.25则不将目标勾画出来

@@ -6,6 +6,8 @@ import torch
 import torch.backends.cudnn as cudnn
 from numpy import random
 import math
+from PIL import Image, ExifTags
+import os
 
 from models.experimental import attempt_load
 from utils.datasets import LoadStreams, LoadImages
@@ -26,27 +28,43 @@ def trans_yolo_to_normal(width, height, xywh):
     x_r = (2*width*x + w*width)/2
     y_l = (2*height*y - h*height)/2
     y_r = (2*height*y + h*height)/2
-    return [x_l, y_l, x_r, y_r]
+    return (int(x_l), int(y_l), int(x_r), int(y_r))
 
 def cut_img(p_name, det_info_list, width, height):
     #判断是否符合长度(应该为7个框，6个图片，1个二维码)
     if len(det_info_list) != 7:
         log_result(p_name+'未完整框选出所有图片，总框选数量为'+str(len(det_info_list)))
+        return None
+    print(det_info_list)
     sorted_list = sort_img(det_info_list)
-    for i in sorted_list:
-        i[1] = trans_yolo_to_normal(width, height, i[1])
-    print(sorted_list)
+    if sorted_list == None:
+        log_result(p_name+'未找到qr码，总框选数量为'+str(len(det_info_list)))
+        return None
+    cut_img_step(p_name, sorted_list, width, height)
+def cut_img_step(p_name, sorted_list, width, height):
+
+    #打开图片
+    img = cv2.imread(os.path.join(config.source, p_name))
+    for i in range(len(sorted_list)):
+        (x_l, y_l, x_r, y_r) = trans_yolo_to_normal(width, height, sorted_list[i][1])
+        cropped = img[y_l:y_r, x_l:x_r]
+        cv2.imwrite(os.path.join(config.save_cut_img_path, str(i)+'.jpg'), cropped)
+    
 
 def sort_img(l):
     img_list = []
     src_len = len(l)
+    #找寻qr码
     for i in range(len(l)):
         if l[i][0] == 1:
             img_list.append(l[i])
             l.pop(i)
             break
+    if len(img_list) == 0:
+        #如果未找到qr码，则返回None
+        return None
     l, img_list, aim_index = sort_step(l, img_list, 0, src_len)
-    img_list = img_list[::-1]
+    # img_list = img_list[::-1]
     return img_list   
  
 def sort_step(l, img_list, aim_index, src_len):
