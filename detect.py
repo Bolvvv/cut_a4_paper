@@ -52,8 +52,10 @@ def cut_img_step(p_name, sorted_list, width, height):
     
 
 def sort_img(l):
+    """
+    该排序算法只适用于图片排布为从左到右，从上到下，且二维码相对位置为左。拍摄时的A4纸上下颠倒或者位置变动均不会对排序结果造成影响
+    """
     img_list = []
-    src_len = len(l)
     #找寻qr码
     for i in range(len(l)):
         if l[i][0] == 1:
@@ -63,31 +65,39 @@ def sort_img(l):
     if len(img_list) == 0:
         #如果未找到qr码，则返回None
         return None
-    l, img_list, aim_index = sort_step(l, img_list, 0, src_len)
-    # img_list = img_list[::-1]
-    return img_list   
+    l, img_list, aim_index = sort_step(l, img_list, 0)
+    fianl_list = sort_mapping(img_list)
+    return fianl_list   
  
-def sort_step(l, img_list, aim_index, src_len):
-    if aim_index == src_len -1:
+def sort_step(l, img_list, aim_index):
+    if aim_index == len(l):
         return l, img_list, aim_index
     min_len = [2, -1]#最近距离和编号
-    min_2_len = [2, -1]#次近距离和编号
     for m in range(len(l)):
         if l[m] != None:
             length_to_aim = math.pow(l[m][1][0] - img_list[aim_index][1][0], 2) + math.pow(l[m][1][1] - img_list[aim_index][1][1], 2)
             if length_to_aim < min_len[0]:
-                min_2_len = min_len.copy()#进行浅拷贝
                 min_len = [length_to_aim, m]
-            elif length_to_aim < min_2_len[0]:
-                min_2_len = [length_to_aim, m]
-            else:
                 continue
-    img_list.append(l[min_2_len[1]])
     img_list.append(l[min_len[1]])
-    l[min_2_len[1]] = None
     l[min_len[1]] = None
     aim_index = len(img_list)-1
-    return sort_step(l, img_list, aim_index, src_len)
+    return sort_step(l, img_list, aim_index)
+
+def sort_mapping(img_list):
+    img_list_len = len(img_list)
+    sorted_list = [None]*img_list_len
+    if img_list_len%2 == 0:
+        sorted_list[img_list_len-1] = img_list[0]#先讲二维码所属位置赋值
+        img_list.pop(0)#再将二维码的值去掉
+        img_list_len -= 1#将长度减一
+    left_len = math.ceil(img_list_len/2)
+    right_len = img_list_len-left_len
+    for i in range(0, 2*left_len, 2):
+        sorted_list[img_list_len-i-1] = img_list[int(i/2)]
+    for i in range(2, 2*right_len+2, 2):
+        sorted_list[i-1] = img_list[int(i/2)+left_len-1]
+    return sorted_list
 
 def log_result(str_log):
     with open(config.result_log, 'a') as f:
