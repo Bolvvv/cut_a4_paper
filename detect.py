@@ -1,13 +1,13 @@
 import time
 from pathlib import Path
 
-import cv2
 import torch
 import torch.backends.cudnn as cudnn
 from numpy import random
 import math
 from PIL import Image, ExifTags
 import os
+import cv2
 
 from models.experimental import attempt_load
 from utils.datasets import LoadStreams, LoadImages
@@ -18,6 +18,18 @@ from utils.torch_utils import select_device, load_classifier, time_synchronized
 from detect_config import Config
 
 config =Config#生成参数对象
+
+
+def cut_img(p_name, det_info_list, width, height, save_dir, label_list):
+    #判断是否符合长度(应该为7个框，6个图片，1个二维码)
+    if len(det_info_list) != 7:
+        log_result(p_name+'框选数量有误，总框选数量为'+str(len(det_info_list))+' 框选结果存入:'+str(save_dir))
+        return None
+    sorted_list = sort_img(det_info_list)
+    if sorted_list == None:
+        log_result(p_name+'未找到qr码，总框选数量为'+str(len(det_info_list))+' 框选结果存入:'+save_dir)
+        return None
+    cut_img_step(p_name, sorted_list, width, height, label_list)
 
 def trans_yolo_to_normal(width, height, xywh):
     """
@@ -30,27 +42,35 @@ def trans_yolo_to_normal(width, height, xywh):
     y_r = (2*height*y + h*height)/2
     return (int(x_l), int(y_l), int(x_r), int(y_r))
 
-def cut_img(p_name, det_info_list, width, height):
-    #判断是否符合长度(应该为7个框，6个图片，1个二维码)
-    if len(det_info_list) != 7:
-        log_result(p_name+'未完整框选出所有图片，总框选数量为'+str(len(det_info_list)))
-        return None
-    print(det_info_list)
-    sorted_list = sort_img(det_info_list)
-    if sorted_list == None:
-        log_result(p_name+'未找到qr码，总框选数量为'+str(len(det_info_list)))
-        return None
-    cut_img_step(p_name, sorted_list, width, height)
-def cut_img_step(p_name, sorted_list, width, height):
-
+def cut_img_step(p_name, sorted_list, width, height, label_list):
+    print()
     #打开图片
     img = cv2.imread(os.path.join(config.source, p_name))
+    #获取二维码结果
+    cropped_list = []
     for i in range(len(sorted_list)):
         (x_l, y_l, x_r, y_r) = trans_yolo_to_normal(width, height, sorted_list[i][1])
         cropped = img[y_l:y_r, x_l:x_r]
-        cv2.imwrite(os.path.join(config.save_cut_img_path, str(i)+'.jpg'), cropped)
-    
-
+        cropped_list.append(cropped)
+    cv2.imwrite('temp.jpg', cropped_list[len(cropped_list)-1])
+    img_temp = cv2.imread('temp.jpg')
+    qrDecoder = cv2.QRCodeDetector()
+    qr_data, _, _ = qrDecoder.detectAndDecode(img_temp)
+    if len(qr_data) == 0:
+        log_result(p_name+' 二维码解析器无法识别图片二维码，未完成分割，未储存分割图片')
+        return None
+    number = qr_data
+    temp_label_list = []
+    for i in label_list:
+        if number == i[1]:
+            temp_label_list.append(i)
+    if len(cropped_list)-1 != len(temp_label_list):
+        #由于在cropped_list中添加了二维码，因此在比较时需要去除
+        log_result(p_name+" 完成切割，但无法与label中的标签在数量上对应，未储存分割图片")
+        return None
+    for i in range(len(cropped_list)-1):
+        cv2.imwrite(os.path.join(config.save_cut_img_path, temp_label_list[i][0], temp_label_list[i][2]), cropped_list[i])
+        
 def sort_img(l):
     """
     该排序算法只适用于图片排布为从左到右，从上到下，且二维码相对位置为左。拍摄时的A4纸上下颠倒或者位置变动均不会对排序结果造成影响
@@ -99,12 +119,25 @@ def sort_mapping(img_list):
         sorted_list[i-1] = img_list[int(i/2)+left_len-1]
     return sorted_list
 
+def rename_file():
+    """
+    由于统计的数据每个人都是不一样的，可能存在重名的照片，因此需要将数据重新命名
+    """
+    file_list = os.listdir(config.source)
+    for i in range(len(file_list)):
+        old_name = os.path.join(config.source, file_list[i])
+        new_name = os.path.join(config.source, str(i)+'.jpg')
+        os.rename(old_name, new_name)
+
 def log_result(str_log):
     with open(config.result_log, 'a') as f:
         f.writelines(str_log+'\n')
 
 def detect():
     source, weights, save_txt, imgsz, save_img = config.source, config.weights, config.save_txt, config.img_size, config.save_img
+
+    #对图片进行重命名
+    rename_file()
 
     # Directories
     save_dir = Path(increment_path(Path(config.project) / config.name, exist_ok=config.exist_ok))  # increment run
@@ -133,6 +166,15 @@ def detect():
     t0 = time.time()
     img = torch.zeros((1, 3, imgsz, imgsz), device=device)  # init img
     _ = model(img.half() if half else img) if device.type != 'cpu' else None  # run once
+
+    #载入标签文件，用于将切割好的图片进行归档
+    label_list = []
+    with open(config.label_list_path, 'r')  as f:
+        temp_list = f.readlines()
+        for i in temp_list:
+            temp = i.strip().split(',',maxsplit=3)
+            label_list.append(temp)
+
     for path, img, im0s, vid_cap in dataset:
         img = torch.from_numpy(img).to(device)
         img = img.half() if half else img.float()  # uint8 to fp16/32
@@ -173,7 +215,7 @@ def detect():
                         label = f'{names[int(cls)]} {conf:.2f}'
                         plot_one_box(xyxy, im0, label=label, color=colors[int(cls)], line_thickness=3)
                 #处理图片信息
-                cut_img(p.name, det_info_list, im0.shape[1], im0.shape[0])
+                cut_img(p.name, det_info_list, im0.shape[1], im0.shape[0], save_dir, label_list)
             else:
                 #此时表明没有框选出图片，需要进行记录：
                 with open('result.txt', 'a') as f:
