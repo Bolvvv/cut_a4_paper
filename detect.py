@@ -128,7 +128,7 @@ def rename_file():
     file_list = os.listdir(config.source)
     for i in range(len(file_list)):
         old_name = os.path.join(config.source, file_list[i])
-        new_name = os.path.join(config.source, str(i)+'.jpg')
+        new_name = os.path.join(config.source, str(i)+time.strftime('_%H%M_%S',time.localtime(time.time()))+'.jpg')
         os.rename(old_name, new_name)
 
 def detect():
