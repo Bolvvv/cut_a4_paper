@@ -56,12 +56,16 @@ def cut_img_step(p_name, sorted_list, width, height, label_list):
         (x_l, y_l, x_r, y_r) = trans_yolo_to_normal(width, height, sorted_list[i][1])
         cropped = img[y_l:y_r, x_l:x_r]
         cropped_list.append(cropped)
-    _,trans_img = cv2.threshold(cropped_list[len(cropped_list)-1],127,255,cv2.THRESH_BINARY)#对图片进行二值化
-    qr_data = decode(trans_img)#对二维码进行解码
-    if len(qr_data) != 1:
+    # _,trans_img = cv2.threshold(cropped_list[len(cropped_list)-1],127,255,cv2.THRESH_BINARY)#对图片进行二值化
+    # qr_data = decode(trans_img)#对二维码进行解码
+    # if len(qr_data) != 1:
+    #     log_result(p_name+' 二维码解析器无法识别图片二维码或识别到多个二维码，未完成分割，未储存分割图片')
+    #     return None
+    # number =qr_data[0].data.decode('UTF-8')#将解析出的二进制二维码结果转换为utf-8编码
+    number = decode_qr(cropped_list[len(cropped_list)-1])
+    if number == None:
         log_result(p_name+' 二维码解析器无法识别图片二维码或识别到多个二维码，未完成分割，未储存分割图片')
         return None
-    number =qr_data[0].data.decode('UTF-8')#将解析出的二进制二维码结果转换为utf-8编码
     temp_label_list = []
     for i in label_list:
         if number == i[1]:
@@ -131,11 +135,34 @@ def rename_file():
         new_name = os.path.join(config.source, str(i)+time.strftime('_%H%M_%S',time.localtime(time.time()))+'.jpg')
         os.rename(old_name, new_name)
 
+def decode_qr(img):
+    _,trans_img = cv2.threshold(img,127,255,cv2.THRESH_BINARY)#对图片进行二值化
+    result = decode_qr_step(trans_img)
+    if result != None:
+        return result
+    else:
+        flag = True
+        for i in range(20, 240, 20):
+            _,trans_img = cv2.threshold(img,i,255,cv2.THRESH_BINARY)#对图片进行二值化
+            result = decode_qr_step(trans_img)
+            if result != None:
+                flag = False
+                return result
+        if flag:
+            return None
+def decode_qr_step(img):
+    qr_data = decode(img)#对二维码进行解码
+    if len(qr_data) == 1:
+        number =qr_data[0].data.decode('UTF-8')#将解析出的二进制二维码结果转换为utf-8编码
+        return number
+    else:
+        return None
+
 def detect():
     source, weights, save_txt, imgsz, save_img = config.source, config.weights, config.save_txt, config.img_size, config.save_img
 
     #对图片进行重命名
-    rename_file()
+    # rename_file()
 
     # Directories
     save_dir = Path(increment_path(Path(config.project) / config.name, exist_ok=config.exist_ok))  # increment run

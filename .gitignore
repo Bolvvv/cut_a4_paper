@@ -131,3 +131,6 @@ src_labels/*
 tgt_labels/*
 !README.md
 datasets
+img
+img.zip
+nohup.out
