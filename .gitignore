@@ -131,9 +131,3 @@ src_labels/*
 tgt_labels/*
 !README.md
 datasets
-img
-runs
-weights
-result.txt
-save_cut_img
-log
