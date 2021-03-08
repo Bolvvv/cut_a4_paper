@@ -69,7 +69,11 @@ def cut_img_step(p_name, sorted_list, width, height, label_list):
         log_result(p_name+" 完成切割，但无法与label中的标签在数量上对应，未储存分割图片")
         return None
     for i in range(len(cropped_list)-1):
-        cv2.imwrite(os.path.join(config.save_cut_img_path, temp_label_list[i][0], temp_label_list[i][2]), cropped_list[i])
+        img_path = os.path.join(config.save_cut_img_path, temp_label_list[i][0])
+        img_name = temp_label_list[i][2]
+        if not os.path.exists(img_path):
+            os.makedirs(img_path)
+        cv2.imwrite(os.path.join(img_path, img_name), cropped_list[i])
         
 def sort_img(l):
     """
@@ -156,7 +160,7 @@ def detect():
     source, weights, save_txt, imgsz, save_img = config.source, config.weights, config.save_txt, config.img_size, config.save_img
 
     #对图片进行重命名
-    # rename_file()
+    rename_file()
 
     # Directories
     save_dir = Path(increment_path(Path(config.project) / config.name, exist_ok=config.exist_ok))  # increment run
